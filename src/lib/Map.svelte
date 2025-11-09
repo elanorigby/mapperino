@@ -11,18 +11,46 @@
   let locationWatchId = null
 
   onMount(async () => {
+    // Load saved map state from localStorage or use default (Brent coordinates)
+    const savedState = localStorage.getItem('mapState')
+    let initialCenter = [51.5588, -0.2817]
+    let initialZoom = 13
+
+    if (savedState) {
+      try {
+        const state = JSON.parse(savedState)
+        initialCenter = [state.lat, state.lng]
+        initialZoom = state.zoom
+        console.log('Restored map position:', initialCenter, 'zoom:', initialZoom)
+      } catch (e) {
+        console.warn('Failed to parse saved map state:', e)
+      }
+    }
+
     // Initialize map centered on London Borough of Brent
     map = L.map(mapContainer, {
       tap: true,
       touchZoom: true,
       dragging: true
-    }).setView([51.5588, -0.2817], 13) // Brent coordinates
+    }).setView(initialCenter, initialZoom)
 
     // Add OpenStreetMap tiles
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19
     }).addTo(map)
+
+    // Save map state whenever user moves or zooms
+    map.on('moveend', () => {
+      const center = map.getCenter()
+      const zoom = map.getZoom()
+      const state = {
+        lat: center.lat,
+        lng: center.lng,
+        zoom: zoom
+      }
+      localStorage.setItem('mapState', JSON.stringify(state))
+    })
 
     // Load Brent segments from GeoJSON
     try {
