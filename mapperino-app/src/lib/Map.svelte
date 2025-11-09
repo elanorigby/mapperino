@@ -27,7 +27,7 @@
     // Load Brent segments from GeoJSON
     try {
       console.log('Loading Brent segments...')
-      const response = await fetch('/brent_segments.geojson')
+      const response = await fetch(`${import.meta.env.BASE_URL}brent_segments.geojson`)
       const geojson = await response.json()
 
       console.log(`Loaded ${geojson.features.length} segments`)
