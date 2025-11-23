@@ -4,6 +4,8 @@ A mobile-first web app for collaboratively mapping and marking street segments i
 
 Intended to facilitate group tracking of what streets have been doorknocked/leafleted.
 
+Live demo at https://elanorigby.github.io/mapperino/
+
 ## How It Works
 
 1. App loads the map centered on Brent
@@ -13,11 +15,12 @@ Intended to facilitate group tracking of what streets have been doorknocked/leaf
 5. Tap segments to toggle red/green
 6. Device location shown as blue dot (with permission)
 
+
 ## Todo
-[x] select specific ward
 [] search for streets
 [] allow mark streets as irrelevant
 [] login
+
 
 # Dev notes
 
@@ -53,11 +56,8 @@ npm run build
 
 ## Generating Street Segments
 
-Street segments are pre-processed from OpenStreetMap data using the `segment-processor` Python tool (in separate repo)
+Street segments and ward boundaries, etc. are pre-processed from Office of National Statistics data using the `segment-processor` Python tool (in separate repo).
 
-The generated `brent_segments.geojson` file is stored in `public/` and loaded by the app.
-
-### Ward Data
-Ward boundaries are sourced from the ONS Open Geography Portal (December 2021 boundaries). Each segment includes a `ward` property identifying which electoral ward it belongs to, enabling the ward filtering feature in the app.
+The generated segment files are stored in `public/` and loaded by the app.
 
 
