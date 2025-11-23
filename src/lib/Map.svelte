@@ -11,9 +11,15 @@
   let locationWatchId = null
 
   // Ward filtering state
-  let allWards = []
-  let selectedWards = new Set()
-  let menuOpen = false
+  let allWards = $state([])
+  let selectedWards = $state(new Set())
+  let menuOpen = $state(false)
+
+  // Search state
+  let searchQuery = $state('')
+  let searchResults = $state([])
+  let searchLoading = $state(false)
+  let searchDebounceTimer = null
 
   // Toggle ward selection
   function toggleWard(ward) {
@@ -54,6 +60,73 @@
       }
     })
   }
+
+  // Search using Nominatim API (OpenStreetMap geocoding)
+  async function performSearch(query) {
+    if (!query || query.trim().length < 3) {
+      searchResults = []
+      return
+    }
+
+    // Debounce to avoid too many API calls
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer)
+    }
+
+    searchDebounceTimer = setTimeout(async () => {
+      searchLoading = true
+      try {
+        // Brent bounding box (roughly)
+        const viewbox = '-0.32,51.52,-0.19,51.60'
+        const url = `https://nominatim.openstreetmap.org/search?` +
+          `q=${encodeURIComponent(query + ', Brent, London, UK')}` +
+          `&format=json` +
+          `&addressdetails=1` +
+          `&limit=10` +
+          `&viewbox=${viewbox}` +
+          `&bounded=0`
+
+        const response = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mapperino App (testing)'
+          }
+        })
+        const data = await response.json()
+
+        searchResults = data.map(item => ({
+          id: item.place_id,
+          displayName: item.display_name,
+          lat: parseFloat(item.lat),
+          lon: parseFloat(item.lon),
+          type: item.type,
+          addressType: item.addresstype
+        }))
+      } catch (error) {
+        console.error('Search error:', error)
+        searchResults = []
+      } finally {
+        searchLoading = false
+      }
+    }, 300)
+  }
+
+  // Zoom to a search result from Nominatim
+  function zoomToResult(result) {
+    if (result.lat && result.lon) {
+      map.setView([result.lat, result.lon], 17)
+
+      // Add a temporary marker
+      const marker = L.marker([result.lat, result.lon]).addTo(map)
+      setTimeout(() => {
+        map.removeLayer(marker)
+      }, 5000)
+    }
+    // Clear search and close menu
+    searchQuery = ''
+    searchResults = []
+    menuOpen = false
+  }
+
 
   onMount(async () => {
     // Load saved map state from localStorage or use default (Brent coordinates)
@@ -117,13 +190,13 @@
 
       // Add each segment to the map
       geojson.features.forEach((feature) => {
-        const { id, color, ward } = feature.properties
+        const { id, color, ward, name, postcodes } = feature.properties
         const coords = feature.geometry.coordinates.map(coord => [coord[1], coord[0]]) // [lat, lng]
 
         const polyline = L.polyline(coords, {
           color: color,
           weight: 6,
-          opacity: 0.7,
+          opacity: 0.3,
           lineJoin: 'round',
           lineCap: 'round'
         }).addTo(map)
@@ -138,7 +211,7 @@
           roadSegments[id].color = newColor
         })
 
-        roadSegments[id] = { polyline, color, coords, ward }
+        roadSegments[id] = { polyline, color, coords, ward, streetName: name, postcodes }
       })
 
       console.log('All segments loaded successfully')
@@ -219,9 +292,35 @@
   {#if menuOpen}
     <div class="ward-menu">
       <div class="ward-menu-header">
-        <h3>Select Wards</h3>
+        <h3>Menu</h3>
         <button class="close-menu-btn" on:click={() => menuOpen = false}>✕</button>
       </div>
+
+      <!-- Search section -->
+      <div class="search-section">
+        <input
+          type="text"
+          class="search-input"
+          placeholder="Search by street name or postcode..."
+          bind:value={searchQuery}
+          on:input={() => performSearch(searchQuery)}
+        />
+        {#if searchLoading}
+          <div class="no-results">Searching...</div>
+        {:else if searchResults.length > 0}
+          <div class="search-results">
+            {#each searchResults as result}
+              <button class="search-result-item" on:click={() => zoomToResult(result)}>
+                <span class="result-name">{result.displayName}</span>
+              </button>
+            {/each}
+          </div>
+        {:else if searchQuery.length >= 3}
+          <div class="no-results">No results found</div>
+        {/if}
+      </div>
+
+      <div class="ward-menu-section-header">Filter by Ward</div>
 
       <div class="ward-menu-controls">
         <button class="menu-action-btn" on:click={selectAllWards}>Select All</button>
@@ -469,6 +568,78 @@
     margin: 0;
     font-size: 18px;
     color: #333;
+  }
+
+  .search-section {
+    padding: 12px 16px;
+    border-bottom: 1px solid #e0e0e0;
+  }
+
+  .search-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 14px;
+    box-sizing: border-box;
+  }
+
+  .search-input:focus {
+    outline: none;
+    border-color: #4285F4;
+    box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+  }
+
+  .search-results {
+    margin-top: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .search-result-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+    padding: 10px 12px;
+    background: #f9f9f9;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-bottom: 4px;
+    text-align: left;
+    transition: background 0.2s;
+  }
+
+  .search-result-item:hover {
+    background: #e8f0fe;
+  }
+
+  .result-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: #333;
+  }
+
+  .result-postcodes {
+    font-size: 12px;
+    color: #666;
+    margin-top: 2px;
+  }
+
+  .no-results {
+    padding: 12px;
+    text-align: center;
+    color: #666;
+    font-size: 14px;
+  }
+
+  .ward-menu-section-header {
+    padding: 12px 16px 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #666;
+    border-bottom: 1px solid #e0e0e0;
   }
 
   .close-menu-btn {
