@@ -4,6 +4,9 @@
   import 'leaflet/dist/leaflet.css'
   // import { firebaseService } from './firebase' // COMMENTED OUT - no Firebase for now
 
+  // Props
+  const { syncEnabled = false } = $props()
+
   let mapContainer
   let map
   let roadSegments = {}
@@ -292,7 +295,7 @@
   {#if menuOpen}
     <div class="ward-menu">
       <div class="ward-menu-header">
-        <h3>Menu</h3>
+        <h3>Brent</h3>
         <button class="close-menu-btn" on:click={() => menuOpen = false}>✕</button>
       </div>
 
