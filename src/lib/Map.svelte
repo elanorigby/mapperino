@@ -437,7 +437,7 @@
               </button>
             {/each}
           </div>
-        {:else if searchQuery.length >= 3}
+        {:else if searchQuery.length >= 3 && !searchLoading}
           <div class="no-results">No results found</div>
         {/if}
       </div>
