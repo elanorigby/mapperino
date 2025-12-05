@@ -238,19 +238,36 @@
         const { id, color, ward, name, postcodes } = feature.properties
         const coords = feature.geometry.coordinates.map(coord => [coord[1], coord[0]]) // [lat, lng]
 
+        // Visual polyline
         const polyline = L.polyline(coords, {
           color: color,
           weight: 8,
           opacity: 0.6,
           lineJoin: 'round',
+          lineCap: 'round',
+          interactive: false  // Not clickable - hitArea handles clicks
+        }).addTo(map)
+
+        // Invisible wider hit area for easier clicking/tapping
+        const hitArea = L.polyline(coords, {
+          color: 'transparent',
+          weight: 25,  // Much wider for touch targets
+          opacity: 0,
+          lineJoin: 'round',
           lineCap: 'round'
         }).addTo(map)
 
-        // Add click handler to toggle color
-        polyline.on('click', async (e) => {
+        // Add click handler to hit area
+        hitArea.on('click', async (e) => {
           L.DomEvent.stopPropagation(e)
           const currentColor = roadSegments[id].color
           const newColor = currentColor === '#FF0000' ? '#00FF00' : '#FF0000' // Toggle red/green
+
+          // Visual feedback: pulse effect
+          polyline.setStyle({ weight: 12, opacity: 1 })
+          setTimeout(() => {
+            polyline.setStyle({ weight: 8, opacity: 0.6 })
+          }, 200)
 
           polyline.setStyle({ color: newColor })
           roadSegments[id].color = newColor
@@ -269,7 +286,18 @@
           }
         })
 
-        roadSegments[id] = { polyline, color, coords, ward, streetName: name, postcodes }
+        // Touch feedback on mobile
+        hitArea.on('touchstart', () => {
+          polyline.setStyle({ weight: 12, opacity: 1 })
+        })
+
+        hitArea.on('touchend touchcancel', () => {
+          setTimeout(() => {
+            polyline.setStyle({ weight: 8, opacity: 0.6 })
+          }, 200)
+        })
+
+        roadSegments[id] = { polyline, hitArea, color, coords, ward, streetName: name, postcodes }
       })
 
       console.log('All segments loaded successfully')

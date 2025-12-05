@@ -62,6 +62,4 @@ Visit `http://localhost:5173`
 npm run build
 ```
 
-## Generating Street Segments
-
 
