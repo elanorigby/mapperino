@@ -1,6 +1,7 @@
 <script>
   let password = $state('')
   let error = $state('')
+  let showPassword = $state(false)
 
   const { onSuccess } = $props()
 
@@ -17,6 +18,10 @@
       password = ''
     }
   }
+
+  function togglePasswordVisibility() {
+    showPassword = !showPassword
+  }
 </script>
 
 <div class="login-container">
@@ -25,13 +30,23 @@
     <p>Enter password to continue</p>
 
     <form onsubmit={handleSubmit}>
-      <input
-        type="password"
-        bind:value={password}
-        placeholder="Password"
-        class="password-input"
-        autocomplete="current-password"
-      />
+      <div class="password-field">
+        <input
+          type={showPassword ? 'text' : 'password'}
+          bind:value={password}
+          placeholder="Password"
+          class="password-input"
+          autocomplete="current-password"
+        />
+        <button
+          type="button"
+          class="toggle-password"
+          onclick={togglePasswordVisibility}
+          aria-label={showPassword ? 'Hide password' : 'Show password'}
+        >
+          {showPassword ? '🙈' : '👁️'}
+        </button>
+      </div>
 
       {#if error}
         <p class="error">{error}</p>
@@ -80,8 +95,13 @@
     gap: 16px;
   }
 
+  .password-field {
+    position: relative;
+    width: 100%;
+  }
+
   .password-input {
-    padding: 12px 16px;
+    padding: 12px 48px 12px 16px;
     border: 1px solid #ddd;
     border-radius: 8px;
     font-size: 16px;
@@ -93,6 +113,28 @@
     outline: none;
     border-color: #4285F4;
     box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+  }
+
+  .toggle-password {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 20px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background 0.2s;
+  }
+
+  .toggle-password:hover {
+    background: #f5f5f5;
+  }
+
+  .toggle-password:active {
+    transform: translateY(-50%) scale(0.95);
   }
 
   .login-btn {
