@@ -13,6 +13,7 @@
   let locationMarker = null
   let locationWatchId = null
   let firestoreUnsubscribe = null
+  let activeLabel = null // Currently displayed street label
 
   // Ward filtering state
   let allWards = $state([])
@@ -45,6 +46,39 @@
   function deselectAllWards() {
     selectedWards = new Set()
     applyWardFilter()
+  }
+
+  // Show a street name label
+  function showStreetLabel(segmentId) {
+    // Remove previous label if exists
+    if (activeLabel) {
+      map.removeLayer(activeLabel)
+    }
+
+    const segment = roadSegments[segmentId]
+    if (!segment || !segment.streetName) return
+
+    // Calculate center point for label
+    const centerIdx = Math.floor(segment.coords.length / 2)
+    const centerPoint = segment.coords[centerIdx]
+
+    // Create and show label
+    activeLabel = L.marker(centerPoint, {
+      icon: L.divIcon({
+        className: 'street-label',
+        html: `<span>${segment.streetName}</span>`,
+        iconSize: null
+      }),
+      interactive: false
+    }).addTo(map)
+
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+      if (activeLabel) {
+        map.removeLayer(activeLabel)
+        activeLabel = null
+      }
+    }, 5000)
   }
 
   // Apply the ward filter to show/hide segments
@@ -119,8 +153,15 @@
     if (result.lat && result.lon) {
       map.setView([result.lat, result.lon], 17)
 
-      // Add a temporary marker
-      const marker = L.marker([result.lat, result.lon]).addTo(map)
+      // Add a temporary marker with label
+      const marker = L.marker([result.lat, result.lon], {
+        icon: L.divIcon({
+          className: 'street-label search-result-label',
+          html: `<span>${result.displayName.split(',')[0]}</span>`,
+          iconSize: null
+        })
+      }).addTo(map)
+
       setTimeout(() => {
         map.removeLayer(marker)
       }, 5000)
@@ -199,8 +240,8 @@
 
         const polyline = L.polyline(coords, {
           color: color,
-          weight: 6,
-          opacity: 0.3,
+          weight: 8,
+          opacity: 0.6,
           lineJoin: 'round',
           lineCap: 'round'
         }).addTo(map)
@@ -213,6 +254,9 @@
 
           polyline.setStyle({ color: newColor })
           roadSegments[id].color = newColor
+
+          // Show street name label
+          showStreetLabel(id)
 
           // Sync to Firestore if enabled
           if (syncEnabled) {
@@ -779,6 +823,27 @@
     font-size: 13px;
     color: #666;
     text-align: center;
+  }
+
+  /* Street name labels */
+  :global(.street-label) {
+    background: none !important;
+    border: none !important;
+    pointer-events: none;
+  }
+
+  :global(.street-label span) {
+    display: block;
+    padding: 2px 6px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid #666;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #333;
+    white-space: nowrap;
+    text-shadow: 0 0 2px white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   }
 
   /* Responsive adjustments */
