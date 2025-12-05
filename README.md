@@ -25,9 +25,9 @@ The full version of the app that will sync segment state is behind a simple pass
 
 
 ## Todo
-[] login
 [] firebase to sync state
-[] allow mark streets as irrelevant
+[] way to mark streets as irrelevant
+[] way to clear all markings
 
 
 # Dev notes

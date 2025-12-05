@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte'
   import L from 'leaflet'
   import 'leaflet/dist/leaflet.css'
-  // import { firebaseService } from './firebase' // COMMENTED OUT - no Firebase for now
+  import { firestoreService } from './firebase'
 
   // Props
   const { syncEnabled = false } = $props()
@@ -12,6 +12,7 @@
   let roadSegments = {}
   let locationMarker = null
   let locationWatchId = null
+  let firestoreUnsubscribe = null
 
   // Ward filtering state
   let allWards = $state([])
@@ -205,19 +206,61 @@
         }).addTo(map)
 
         // Add click handler to toggle color
-        polyline.on('click', (e) => {
+        polyline.on('click', async (e) => {
           L.DomEvent.stopPropagation(e)
           const currentColor = roadSegments[id].color
           const newColor = currentColor === '#FF0000' ? '#00FF00' : '#FF0000' // Toggle red/green
 
           polyline.setStyle({ color: newColor })
           roadSegments[id].color = newColor
+
+          // Sync to Firestore if enabled
+          if (syncEnabled) {
+            try {
+              await firestoreService.updateSegment(id, newColor)
+            } catch (error) {
+              console.error('Failed to sync segment:', error)
+              // Optionally revert the color on error
+            }
+          }
         })
 
         roadSegments[id] = { polyline, color, coords, ward, streetName: name, postcodes }
       })
 
       console.log('All segments loaded successfully')
+
+      // Initialize Firestore sync if enabled
+      if (syncEnabled) {
+        try {
+          // Load initial segment states from Firestore
+          console.log('Loading segment states from Firestore...')
+          const segmentStates = await firestoreService.getSegments()
+
+          // Apply saved states
+          Object.entries(segmentStates).forEach(([segmentId, color]) => {
+            if (roadSegments[segmentId]) {
+              roadSegments[segmentId].polyline.setStyle({ color })
+              roadSegments[segmentId].color = color
+            }
+          })
+          console.log(`Applied ${Object.keys(segmentStates).length} saved segment states`)
+
+          // Subscribe to real-time updates
+          firestoreUnsubscribe = firestoreService.subscribeToSegments((updatedSegments) => {
+            console.log('Received Firestore update')
+            Object.entries(updatedSegments).forEach(([segmentId, color]) => {
+              if (roadSegments[segmentId] && roadSegments[segmentId].color !== color) {
+                roadSegments[segmentId].polyline.setStyle({ color })
+                roadSegments[segmentId].color = color
+              }
+            })
+          })
+          console.log('Subscribed to Firestore updates')
+        } catch (error) {
+          console.error('Failed to initialize Firestore sync:', error)
+        }
+      }
     } catch (error) {
       console.error('Failed to load segments:', error)
     }
@@ -276,10 +319,14 @@
       navigator.geolocation.clearWatch(locationWatchId)
     }
 
+    // Unsubscribe from Firestore
+    if (firestoreUnsubscribe) {
+      firestoreUnsubscribe()
+    }
+
     if (map) {
       map.remove()
     }
-    // firebaseService.unsubscribe() // COMMENTED OUT - no Firebase
   })
 </script>
 
