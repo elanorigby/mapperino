@@ -16,6 +16,10 @@
   let activeLabel = null // Currently displayed street label
   let segmentsLoading = $state(true)
 
+  // Per-side segment state
+  let isHighZoom = false
+  const ZOOM_THRESHOLD = 18
+
   // Ward filtering state
   let allWards = $state([])
   let selectedWards = $state(new Set())
@@ -85,17 +89,20 @@
   // Apply the ward filter to show/hide segments
   function applyWardFilter() {
     Object.entries(roadSegments).forEach(([id, segment]) => {
-      const { polyline, ward } = segment
+      const { polyline, hitArea, ward } = segment
+      const visible = selectedWards.size === 0 || selectedWards.has(ward)
 
-      // Show segment if no wards selected OR if segment's ward is selected
-      if (selectedWards.size === 0 || selectedWards.has(ward)) {
+      if (visible) {
         if (!map.hasLayer(polyline)) {
           polyline.addTo(map)
         }
-      } else {
-        if (map.hasLayer(polyline)) {
-          map.removeLayer(polyline)
+        // Only show hit areas at high zoom
+        if (isHighZoom && !map.hasLayer(hitArea)) {
+          hitArea.addTo(map)
         }
+      } else {
+        if (map.hasLayer(polyline)) map.removeLayer(polyline)
+        if (map.hasLayer(hitArea)) map.removeLayer(hitArea)
       }
     })
   }
@@ -174,6 +181,66 @@
   }
 
 
+  // Click handler for individual side segments (high zoom)
+  async function handleSegmentClick(id) {
+    const segment = roadSegments[id]
+
+    // In dev mode, show debug popup with segment properties
+    if (import.meta.env.DEV) {
+      const props = segment.properties
+      const html = `<pre style="margin:0;font-size:12px;max-height:300px;overflow:auto">${JSON.stringify(props, null, 2)}</pre>`
+      const centerIdx = Math.floor(segment.coords.length / 2)
+      L.popup({ maxWidth: 400 })
+        .setLatLng(segment.coords[centerIdx])
+        .setContent(html)
+        .openOn(map)
+      return
+    }
+
+    const newColor = segment.color === '#00FF00' ? '#FF0000' : '#00FF00'
+
+    // Visual feedback: pulse effect
+    segment.polyline.setStyle({ weight: 8, opacity: 1 })
+    setTimeout(() => {
+      segment.polyline.setStyle({ weight: 5, opacity: 1 })
+    }, 200)
+
+    segment.polyline.setStyle({ color: newColor })
+    segment.color = newColor
+
+    showStreetLabel(id)
+
+    if (syncEnabled) {
+      try {
+        await firestoreService.updateSegment(id, newColor)
+      } catch (error) {
+        console.error('Failed to sync segment:', error)
+      }
+    }
+  }
+
+  // Add/remove hit areas based on zoom level (polylines are always on the map)
+  function updateZoomDisplay() {
+    const wasHighZoom = isHighZoom
+    isHighZoom = map.getZoom() >= ZOOM_THRESHOLD
+
+    if (wasHighZoom === isHighZoom) return
+
+    const wardVisible = (ward) => selectedWards.size === 0 || selectedWards.has(ward)
+
+    Object.values(roadSegments).forEach((segment) => {
+      if (isHighZoom) {
+        if (wardVisible(segment.ward) && !map.hasLayer(segment.hitArea)) {
+          segment.hitArea.addTo(map)
+        }
+      } else {
+        if (map.hasLayer(segment.hitArea)) {
+          map.removeLayer(segment.hitArea)
+        }
+      }
+    })
+  }
+
   onMount(async () => {
     // Load saved map state from localStorage or use default (Brent coordinates)
     const savedState = localStorage.getItem('mapState')
@@ -203,6 +270,9 @@
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19
     }).addTo(map)
+
+    // Update polyline visibility on zoom change
+    map.on('zoomend', () => updateZoomDisplay())
 
     // Save map state whenever user moves or zooms
     map.on('moveend', () => {
@@ -234,74 +304,61 @@
       allWards = Array.from(wardsSet).sort()
       console.log(`Found ${allWards.length} unique wards:`, allWards)
 
-      // Add each segment to the map
+      // Determine initial zoom state
+      isHighZoom = map.getZoom() >= ZOOM_THRESHOLD
+
+      // Process each segment
       geojson.features.forEach((feature) => {
-        const { id, color, ward, name, postcodes } = feature.properties
+        const { id, color, ward, name, postcodes, pair_id, side } = feature.properties
         const coords = feature.geometry.coordinates.map(coord => [coord[1], coord[0]]) // [lat, lng]
 
-        // Visual polyline
+        // Visual polyline — always on the map
         const polyline = L.polyline(coords, {
           color: color,
-          weight: 8,
-          opacity: 0.6,
+          weight: 5,
+          opacity: 1,
           lineJoin: 'round',
           lineCap: 'round',
-          interactive: false  // Not clickable - hitArea handles clicks
+          interactive: false
         }).addTo(map)
 
         // Invisible wider hit area for easier clicking/tapping
         const hitArea = L.polyline(coords, {
           color: 'transparent',
-          weight: 25,  // Much wider for touch targets
+          weight: 25,
           opacity: 0,
           lineJoin: 'round',
           lineCap: 'round'
-        }).addTo(map)
-
-        // Add click handler to hit area
-        hitArea.on('click', async (e) => {
-          L.DomEvent.stopPropagation(e)
-          const currentColor = roadSegments[id].color
-          const newColor = currentColor === '#FF0000' ? '#00FF00' : '#FF0000' // Toggle red/green
-
-          // Visual feedback: pulse effect
-          polyline.setStyle({ weight: 12, opacity: 1 })
-          setTimeout(() => {
-            polyline.setStyle({ weight: 8, opacity: 0.6 })
-          }, 200)
-
-          polyline.setStyle({ color: newColor })
-          roadSegments[id].color = newColor
-
-          // Show street name label
-          showStreetLabel(id)
-
-          // Sync to Firestore if enabled
-          if (syncEnabled) {
-            try {
-              await firestoreService.updateSegment(id, newColor)
-            } catch (error) {
-              console.error('Failed to sync segment:', error)
-              // Optionally revert the color on error
-            }
-          }
         })
 
-        // Touch feedback on mobile
+        // In dev mode, always allow clicking; otherwise only at high zoom
+        if (import.meta.env.DEV || isHighZoom) hitArea.addTo(map)
+
+        hitArea.on('click', (e) => {
+          L.DomEvent.stopPropagation(e)
+          handleSegmentClick(id)
+        })
+
         hitArea.on('touchstart', () => {
-          polyline.setStyle({ weight: 12, opacity: 1 })
+          polyline.setStyle({ weight: 8, opacity: 1 })
         })
 
         hitArea.on('touchend touchcancel', () => {
           setTimeout(() => {
-            polyline.setStyle({ weight: 8, opacity: 0.6 })
+            polyline.setStyle({ weight: 5, opacity: 1 })
           }, 200)
         })
 
-        roadSegments[id] = { polyline, hitArea, color, coords, ward, streetName: name, postcodes }
+        roadSegments[id] = {
+          polyline, hitArea, color, coords, ward,
+          streetName: name, postcodes,
+          pairId: pair_id || null,
+          side: side || null,
+          properties: feature.properties
+        }
       })
 
-      console.log('All segments loaded successfully')
+      console.log(`All segments loaded (${Object.keys(roadSegments).length} sides)`)
       segmentsLoading = false
 
       // Initialize Firestore sync if enabled
