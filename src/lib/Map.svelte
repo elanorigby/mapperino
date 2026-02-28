@@ -31,6 +31,10 @@
   let searchLoading = $state(false)
   let searchDebounceTimer = null
 
+  // Activity toggle state
+  let currentActivity = $state('leafleting')
+  const DEFAULT_COLOR = '#FF0000'
+
   // Toggle ward selection
   function toggleWard(ward) {
     if (selectedWards.has(ward)) {
@@ -212,10 +216,53 @@
 
     if (syncEnabled) {
       try {
-        await firestoreService.updateSegment(id, newColor)
+        await firestoreService.updateSegment(id, newColor, currentActivity)
       } catch (error) {
         console.error('Failed to sync segment:', error)
       }
+    }
+  }
+
+  // Switch between leafleting and doorknocking
+  async function switchActivity(activity) {
+    if (activity === currentActivity) return
+    currentActivity = activity
+
+    if (!syncEnabled) return
+
+    // Unsubscribe from current listener
+    if (firestoreUnsubscribe) {
+      firestoreUnsubscribe()
+      firestoreUnsubscribe = null
+    }
+
+    // Reset all segments to default color
+    Object.values(roadSegments).forEach((segment) => {
+      segment.polyline.setStyle({ color: DEFAULT_COLOR })
+      segment.color = DEFAULT_COLOR
+    })
+
+    // Load segment states for the new activity
+    try {
+      const segmentStates = await firestoreService.getSegments(currentActivity)
+      Object.entries(segmentStates).forEach(([segmentId, color]) => {
+        if (roadSegments[segmentId]) {
+          roadSegments[segmentId].polyline.setStyle({ color })
+          roadSegments[segmentId].color = color
+        }
+      })
+
+      // Re-subscribe to real-time updates
+      firestoreUnsubscribe = firestoreService.subscribeToSegments((updatedSegments) => {
+        Object.entries(updatedSegments).forEach(([segmentId, color]) => {
+          if (roadSegments[segmentId] && roadSegments[segmentId].color !== color) {
+            roadSegments[segmentId].polyline.setStyle({ color })
+            roadSegments[segmentId].color = color
+          }
+        })
+      }, currentActivity)
+    } catch (error) {
+      console.error('Failed to switch activity:', error)
     }
   }
 
@@ -366,7 +413,7 @@
         try {
           // Load initial segment states from Firestore
           console.log('Loading segment states from Firestore...')
-          const segmentStates = await firestoreService.getSegments()
+          const segmentStates = await firestoreService.getSegments(currentActivity)
 
           // Apply saved states
           Object.entries(segmentStates).forEach(([segmentId, color]) => {
@@ -386,7 +433,7 @@
                 roadSegments[segmentId].color = color
               }
             })
-          })
+          }, currentActivity)
           console.log('Subscribed to Firestore updates')
         } catch (error) {
           console.error('Failed to initialize Firestore sync:', error)
@@ -472,6 +519,13 @@
     </div>
   {/if}
 
+  <!-- Activity label -->
+  {#if syncEnabled}
+    <div class="activity-label">
+      {currentActivity === 'leafleting' ? 'Leafleting' : 'Doorknocking'}
+    </div>
+  {/if}
+
   <!-- Hamburger menu button -->
   <button class="hamburger-btn" on:click={() => menuOpen = !menuOpen}>
     <span class="hamburger-icon">☰</span>
@@ -484,6 +538,22 @@
         <h3>Brent</h3>
         <button class="close-menu-btn" on:click={() => menuOpen = false}>✕</button>
       </div>
+
+      <!-- Activity toggle -->
+      {#if syncEnabled}
+        <div class="activity-toggle">
+          <button
+            class="activity-toggle-btn"
+            class:active={currentActivity === 'leafleting'}
+            on:click={() => switchActivity('leafleting')}
+          >Leafleting</button>
+          <button
+            class="activity-toggle-btn"
+            class:active={currentActivity === 'doorknocking'}
+            on:click={() => switchActivity('doorknocking')}
+          >Doorknocking</button>
+        </div>
+      {/if}
 
       <!-- Search section -->
       <div class="search-section">
@@ -509,7 +579,7 @@
         {/if}
       </div>
 
-      <div class="ward-menu-section-header">Filter by Ward</div>
+      <div class="ward-menu-section-header">Filter by Ward (improves performance)</div>
 
       <div class="ward-menu-controls">
         <button class="menu-action-btn" on:click={selectAllWards}>Select All</button>
@@ -728,6 +798,51 @@
   .hamburger-icon {
     font-size: 24px;
     color: #333;
+  }
+
+  .activity-label {
+    position: fixed;
+    top: 20px;
+    right: 78px;
+    z-index: 1000;
+    background: white;
+    border-radius: 24px;
+    height: 48px;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+
+  .activity-toggle {
+    display: flex;
+    gap: 0;
+    background: #f0f0f0;
+    border-radius: 8px;
+    padding: 3px;
+    margin: 0 16px 12px;
+  }
+
+  .activity-toggle-btn {
+    flex: 1;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    background: transparent;
+    color: #666;
+    transition: all 0.2s;
+  }
+
+  .activity-toggle-btn.active {
+    background: white;
+    color: #333;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   }
 
   .ward-menu {

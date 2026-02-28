@@ -17,7 +17,7 @@ const db = getFirestore(app)
 
 // Collection and document references
 const SEGMENTS_COLLECTION = 'segments'
-const BRENT_DOC = 'brent'
+const getBrentDoc = (activity) => `brent-${activity}`
 
 /**
  * Firestore service for syncing segment states
@@ -28,9 +28,9 @@ export const firestoreService = {
    * @param {string} segmentId - The segment ID
    * @param {string} color - The new color (hex)
    */
-  async updateSegment(segmentId, color) {
+  async updateSegment(segmentId, color, activity = 'leafleting') {
     try {
-      const docRef = doc(db, SEGMENTS_COLLECTION, BRENT_DOC)
+      const docRef = doc(db, SEGMENTS_COLLECTION, getBrentDoc(activity))
       await setDoc(docRef, {
         [segmentId]: color,
       }, { merge: true })
@@ -45,9 +45,9 @@ export const firestoreService = {
    * Get all segment states from Firestore
    * @returns {Promise<Object>} Object mapping segment IDs to colors
    */
-  async getSegments() {
+  async getSegments(activity = 'leafleting') {
     try {
-      const docRef = doc(db, SEGMENTS_COLLECTION, BRENT_DOC)
+      const docRef = doc(db, SEGMENTS_COLLECTION, getBrentDoc(activity))
       const docSnap = await getDoc(docRef)
 
       if (docSnap.exists()) {
@@ -67,8 +67,8 @@ export const firestoreService = {
    * @param {Function} callback - Called with updated segment data {segmentId: color}
    * @returns {Function} Unsubscribe function
    */
-  subscribeToSegments(callback) {
-    const docRef = doc(db, SEGMENTS_COLLECTION, BRENT_DOC)
+  subscribeToSegments(callback, activity = 'leafleting') {
+    const docRef = doc(db, SEGMENTS_COLLECTION, getBrentDoc(activity))
 
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
