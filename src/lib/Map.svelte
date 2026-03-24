@@ -506,15 +506,6 @@
             fillOpacity: 1
           }).addTo(map)
 
-          // Optionally add an accuracy circle
-          L.circle([latitude, longitude], {
-            radius: accuracy,
-            fillColor: '#4285F4',
-            color: '#4285F4',
-            weight: 1,
-            opacity: 0.2,
-            fillOpacity: 0.1
-          }).addTo(map)
         },
         (error) => {
           console.error('Geolocation error:', error.message)

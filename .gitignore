@@ -39,3 +39,5 @@ terraform/*.tfstate.*
 terraform/terraform.tfvars
 terraform/crash.log
 terraform/crash.*.log
+
+.git.backup
