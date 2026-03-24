@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection } from 'firebase/firestore'
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, deleteField } from 'firebase/firestore'
 
 // Firebase configuration from environment variables
 const firebaseConfig = {
@@ -58,6 +58,26 @@ export const firestoreService = {
       }
     } catch (error) {
       console.error('Error fetching segments:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Reset all segments in a ward by removing them from Firestore
+   * @param {string[]} segmentIds - Array of segment IDs to reset
+   * @param {string} activity - The activity type
+   */
+  async resetWardSegments(segmentIds, activity = 'leafleting') {
+    try {
+      const docRef = doc(db, SEGMENTS_COLLECTION, getBrentDoc(activity))
+      const updates = {}
+      segmentIds.forEach(id => {
+        updates[id] = deleteField()
+      })
+      await setDoc(docRef, updates, { merge: true })
+      console.log(`Reset ${segmentIds.length} segments`)
+    } catch (error) {
+      console.error('Error resetting ward segments:', error)
       throw error
     }
   },

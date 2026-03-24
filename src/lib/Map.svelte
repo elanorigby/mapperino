@@ -35,6 +35,11 @@
   let currentActivity = $state('leafleting')
   const DEFAULT_COLOR = '#FF0000'
 
+  // Admin / ward reset state
+  let adminOptionsOpen = $state(false)
+  let wardResetConfirm = $state(null)
+  let wardResetting = $state(null)
+
   // Toggle ward selection
   function toggleWard(ward) {
     if (selectedWards.has(ward)) {
@@ -189,18 +194,6 @@
   async function handleSegmentClick(id) {
     const segment = roadSegments[id]
 
-    // In dev mode, show debug popup with segment properties
-    if (import.meta.env.DEV) {
-      const props = segment.properties
-      const html = `<pre style="margin:0;font-size:12px;max-height:300px;overflow:auto">${JSON.stringify(props, null, 2)}</pre>`
-      const centerIdx = Math.floor(segment.coords.length / 2)
-      L.popup({ maxWidth: 400 })
-        .setLatLng(segment.coords[centerIdx])
-        .setContent(html)
-        .openOn(map)
-      return
-    }
-
     const newColor = segment.color === '#00FF00' ? '#FF0000' : '#00FF00'
 
     // Visual feedback: pulse effect
@@ -227,6 +220,7 @@
   async function switchActivity(activity) {
     if (activity === currentActivity) return
     currentActivity = activity
+    wardResetConfirm = null
 
     if (!syncEnabled) return
 
@@ -263,6 +257,49 @@
       }, currentActivity)
     } catch (error) {
       console.error('Failed to switch activity:', error)
+    }
+  }
+
+  function initiateWardReset(ward) {
+    if (wardResetting) return
+    wardResetConfirm = ward
+  }
+
+  function cancelWardReset() {
+    wardResetConfirm = null
+  }
+
+  async function executeWardReset(ward) {
+    wardResetConfirm = null
+    wardResetting = ward
+
+    // Collect green segment IDs in this ward
+    const greenIds = Object.entries(roadSegments)
+      .filter(([, seg]) => seg.ward === ward && seg.color === '#00FF00')
+      .map(([id]) => id)
+
+    if (greenIds.length === 0) {
+      wardResetting = null
+      return
+    }
+
+    // Optimistic local update
+    greenIds.forEach(id => {
+      roadSegments[id].polyline.setStyle({ color: DEFAULT_COLOR })
+      roadSegments[id].color = DEFAULT_COLOR
+    })
+
+    try {
+      await firestoreService.resetWardSegments(greenIds, currentActivity)
+    } catch (error) {
+      console.error('Failed to reset ward:', error)
+      // Revert on failure
+      greenIds.forEach(id => {
+        roadSegments[id].polyline.setStyle({ color: '#00FF00' })
+        roadSegments[id].color = '#00FF00'
+      })
+    } finally {
+      wardResetting = null
     }
   }
 
@@ -599,8 +636,43 @@
         {/each}
       </div>
 
+      {#if syncEnabled}
+        <div class="admin-toggle" on:click={() => adminOptionsOpen = !adminOptionsOpen}>
+          Admin Options {adminOptionsOpen ? '▾' : '▸'}
+        </div>
+        {#if adminOptionsOpen}
+          <div class="admin-section">
+            <p class="admin-description">Reset all progress in a ward back to red</p>
+            {#each allWards as ward}
+              <div class="admin-ward-item">
+                <span>{ward}</span>
+                <button
+                  class="ward-reset-btn"
+                  class:resetting={wardResetting === ward}
+                  disabled={wardResetting === ward}
+                  on:click={() => initiateWardReset(ward)}
+                >{wardResetting === ward ? 'Resetting...' : 'Reset'}</button>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      {/if}
+
       <div class="ward-menu-footer">
         <p>{selectedWards.size === 0 ? 'All wards' : `${selectedWards.size} ward${selectedWards.size === 1 ? '' : 's'} selected`}</p>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Reset confirmation dialog -->
+  {#if wardResetConfirm}
+    <div class="dialog-overlay" on:click={cancelWardReset}>
+      <div class="dialog" on:click|stopPropagation>
+        <p class="dialog-message">This will reset <strong>{wardResetConfirm}</strong> to red, is that what you want to do?</p>
+        <div class="dialog-buttons">
+          <button class="dialog-btn dialog-cancel" on:click={cancelWardReset}>Cancel</button>
+          <button class="dialog-btn dialog-confirm" on:click={() => executeWardReset(wardResetConfirm)}>Confirm</button>
+        </div>
       </div>
     </div>
   {/if}
@@ -1033,6 +1105,133 @@
     font-size: 13px;
     color: #666;
     text-align: center;
+  }
+
+  /* Admin options */
+  .admin-toggle {
+    padding: 12px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #666;
+    cursor: pointer;
+    border-top: 1px solid #e0e0e0;
+    transition: background 0.2s;
+  }
+
+  .admin-toggle:hover {
+    background: #f5f5f5;
+  }
+
+  .admin-section {
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 0 8px 8px;
+  }
+
+  .admin-description {
+    margin: 0 8px 8px;
+    font-size: 12px;
+    color: #999;
+  }
+
+  .admin-ward-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    border-radius: 6px;
+  }
+
+  .admin-ward-item span {
+    font-size: 14px;
+    color: #333;
+  }
+
+  .ward-reset-btn {
+    padding: 4px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    background: #f5f5f5;
+    color: #666;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+
+  .ward-reset-btn:hover {
+    background: #e0e0e0;
+  }
+
+  .ward-reset-btn.resetting {
+    background: #e0e0e0;
+    color: #999;
+    cursor: not-allowed;
+    border-color: #ddd;
+  }
+
+  /* Reset confirmation dialog */
+  .dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .dialog {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 320px;
+    width: calc(100% - 40px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  }
+
+  .dialog-message {
+    margin: 0 0 20px;
+    font-size: 15px;
+    color: #333;
+    line-height: 1.4;
+  }
+
+  .dialog-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+  }
+
+  .dialog-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .dialog-cancel {
+    background: #f0f0f0;
+    color: #333;
+  }
+
+  .dialog-cancel:hover {
+    background: #e0e0e0;
+  }
+
+  .dialog-confirm {
+    background: #d32f2f;
+    color: white;
+  }
+
+  .dialog-confirm:hover {
+    background: #b71c1c;
   }
 
   /* Loading overlay */

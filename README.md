@@ -1,9 +1,20 @@
 # Mapperino
 
-A mobile-first web app for collaboratively mapping and marking street segments, currently scoped to the London Borough of Brent.
+A web app for collaboratively mapping and marking street segments, currently scoped to the London Borough of Brent.
 Intended to facilitate progress tracking of what streets have been doorknocked/leafleting.
 
 Street segments and ward boundaries, etc. are pre-processed from Open Street Map and Office of National Statistics data using the `segment-processor` Python tool (in separate repo - https://github.com/elanorigby/segment-processor).
+
+## Instructions
+
+Make sure you have correctly selected either Leafleting or Doorknocking.
+
+Tap a street segment to mark it green, tap again to reset to red.
+Streets cannot be tapped until zoomed in a certain amount.
+
+Open the menu to select a specific ward. This will make the app run quicker.
+
+Open the admin panel at the bottom of the menu to reset all streets in a ward to red.
 
 ## Webapp
 
@@ -25,9 +36,7 @@ The full version of the app that will sync segment state is behind a simple pass
 
 
 ## Todo
-[] firebase to sync state
-[] way to mark streets as irrelevant
-[] way to clear all markings
+[] way to manually join, split, and delete segments
 
 
 # Dev notes
