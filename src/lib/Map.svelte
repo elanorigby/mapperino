@@ -314,10 +314,12 @@
 
     Object.values(roadSegments).forEach((segment) => {
       if (isHighZoom) {
+        segment.polyline.setStyle({ opacity: 1 })
         if (wardVisible(segment.ward) && !map.hasLayer(segment.hitArea)) {
           segment.hitArea.addTo(map)
         }
       } else {
+        segment.polyline.setStyle({ opacity: 0.3 })
         if (map.hasLayer(segment.hitArea)) {
           map.removeLayer(segment.hitArea)
         }
@@ -400,7 +402,7 @@
         const polyline = L.polyline(coords, {
           color: color,
           weight: 5,
-          opacity: 1,
+          opacity: isHighZoom ? 1 : 0.3,
           lineJoin: 'round',
           lineCap: 'round',
           interactive: false
